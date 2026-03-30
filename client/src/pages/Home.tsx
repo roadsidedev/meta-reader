@@ -36,7 +36,7 @@ export default function Home() {
         <div className="container py-6">
           <div className="flex items-center gap-3">
             <BookOpen className="w-8 h-8 text-amber-500" />
-            <h1 className="text-3xl font-bold text-white">StoryStage</h1>
+            <h1 className="text-3xl font-bold text-white">Meta Reader</h1>
             <p className="text-sm text-gray-400 ml-auto">Performative Audiobook Reader</p>
           </div>
         </div>
