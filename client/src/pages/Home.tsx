@@ -36,7 +36,7 @@ export default function Home() {
         <div className="container py-6">
           <div className="flex items-center gap-3">
             <BookOpen className="w-8 h-8 text-amber-500" />
-            <h1 className="text-3xl font-bold text-white">StoryStage</h1>
+            <h1 className="text-3xl font-bold text-white">Meta Reader</h1>
             <p className="text-sm text-gray-400 ml-auto">Performative Audiobook Reader</p>
           </div>
         </div>
@@ -49,8 +49,8 @@ export default function Home() {
           <div className="text-center space-y-4">
             <h2 className="text-4xl font-bold text-white">Transform Your Reading</h2>
             <p className="text-lg text-gray-300">
-              Upload an EPUB file and experience immersive audiobook narration with synchronized text,
-              AI-generated scenes, and dynamic visual effects.
+              Upload any document or paste text and experience immersive audiobook narration with
+              synchronized text, AI-generated scenes, and dynamic visual effects.
             </p>
           </div>
 
@@ -118,7 +118,7 @@ export default function Home() {
           {/* Info */}
           <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-6 text-center text-sm text-blue-100">
             <p>
-              📖 Upload any EPUB file to get started. Supports all languages and text formats.
+              📖 Supported formats: <strong>EPUB</strong>, <strong>PDF</strong>, <strong>Word (.docx)</strong>, <strong>Markdown (.md)</strong>, <strong>Plain text (.txt)</strong>, or paste text directly.
             </p>
           </div>
         </div>
