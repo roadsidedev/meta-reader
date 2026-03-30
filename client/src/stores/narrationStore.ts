@@ -53,12 +53,17 @@ export const useNarrationStore = create<NarrationState & NarrationActions>((set)
   setIsPlaying: (isPlaying: boolean) => set({ isPlaying }),
 
   setCurrentChapterIndex: (index: number) =>
-    set((state) => ({
-      currentChapterIndex: index,
-      currentChapterContent: state.chapters[index]?.content || '',
-      currentChunkIndex: 0,
-      currentCharIndex: 0,
-    })),
+    set((state) => {
+      const content = state.chapters[index]?.content || '';
+      const firstChunk = content.match(/[^.!?]+[.!?]+/)?.[0]?.trim() || content.substring(0, 300);
+      return {
+        currentChapterIndex: index,
+        currentChapterContent: content,
+        currentChunk: firstChunk,
+        currentChunkIndex: 0,
+        currentCharIndex: 0,
+      };
+    }),
 
   setCurrentChunkIndex: (index: number) => set({ currentChunkIndex: index }),
 

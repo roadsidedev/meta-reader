@@ -51,6 +51,10 @@ export function useNarration(options: UseNarrationOptions = {}) {
       const handleVoicesChanged = () => {
         const updatedVoices = BrowserTTSEngine.getAvailableVoices();
         setAvailableVoices(updatedVoices);
+        if (!engineRef.current && updatedVoices.length > 0) {
+          engineRef.current = new BrowserTTSEngine(updatedVoices[0]);
+          setIsReady(true);
+        }
       };
 
       speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);

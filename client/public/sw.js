@@ -68,6 +68,8 @@ self.addEventListener('fetch', (event) => {
           if (event.request.destination === 'document') {
             return caches.match('/index.html');
           }
+          // Return a 503 for uncached non-document requests
+          return new Response('Service Unavailable', { status: 503 });
         });
       })
   );
