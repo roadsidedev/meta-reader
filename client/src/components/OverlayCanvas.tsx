@@ -19,6 +19,7 @@ export default function OverlayCanvas({ className = '' }: OverlayCanvasProps) {
   const animationFrameRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
   const lastEmitTimeRef = useRef<number>(0);
 
   const [audioLevel, setAudioLevel] = useState(0);
@@ -42,10 +43,19 @@ export default function OverlayCanvas({ className = '' }: OverlayCanvasProps) {
       if (audioContextRef.current && !analyserRef.current) {
         analyserRef.current = audioContextRef.current.createAnalyser();
         analyserRef.current.fftSize = 256;
+        dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
       }
     } catch (error) {
       console.warn('Audio analysis not available:', error);
     }
+
+    return () => {
+      analyserRef.current?.disconnect();
+      analyserRef.current = null;
+      audioContextRef.current?.close();
+      audioContextRef.current = null;
+      dataArrayRef.current = null;
+    };
   }, [maxParticles]);
 
   // Handle resize
@@ -73,12 +83,11 @@ export default function OverlayCanvas({ className = '' }: OverlayCanvasProps) {
       const deltaTime = (now - lastTime) / 1000;
       lastTime = now;
 
-      // Get audio level
+      // Get audio level using cached Uint8Array to avoid per-frame allocation
       let currentAudioLevel = audioLevel;
-      if (analyserRef.current) {
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getByteFrequencyData(dataArray);
-        currentAudioLevel = dataArray.reduce((a, b) => a + b) / dataArray.length / 255;
+      if (analyserRef.current && dataArrayRef.current) {
+        analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+        currentAudioLevel = dataArrayRef.current.reduce((a, b) => a + b) / dataArrayRef.current.length / 255;
       }
 
       setAudioLevel(currentAudioLevel);
@@ -115,6 +124,9 @@ export default function OverlayCanvas({ className = '' }: OverlayCanvasProps) {
       <canvas
         ref={canvasRef}
         className="w-full h-full"
+        role="img"
+        aria-label="Particle effects overlay"
+        aria-hidden="true"
         style={{
           display: 'block',
           imageRendering: 'auto',

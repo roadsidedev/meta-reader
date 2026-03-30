@@ -4,7 +4,6 @@ import { useSceneStore, Mood, ParticleType } from '@/stores/sceneStore';
 
 export interface UseAISceneOptions {
   useCloud?: boolean;
-  cloudApiKey?: string;
   analysisInterval?: number; // ms between analyses
 }
 
@@ -14,7 +13,6 @@ export interface UseAISceneOptions {
 export function useAIScene(narrationText: string, options: UseAISceneOptions = {}) {
   const {
     useCloud = false,
-    cloudApiKey = import.meta.env.VITE_CLAUDE_API_KEY,
     analysisInterval = 3000, // Analyze every 3 seconds
   } = options;
 
@@ -28,9 +26,9 @@ export function useAIScene(narrationText: string, options: UseAISceneOptions = {
   // Initialize analyzer
   useEffect(() => {
     if (!analyzerRef.current) {
-      analyzerRef.current = new HybridSceneAnalyzer(useCloud ? cloudApiKey : undefined);
+      analyzerRef.current = new HybridSceneAnalyzer();
     }
-  }, [useCloud, cloudApiKey]);
+  }, []);
 
   // Analyze narration
   const analyze = useCallback(async () => {

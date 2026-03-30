@@ -220,12 +220,12 @@ export class BrowserTTSEngine {
 
 /**
  * ElevenLabs TTS Engine for high-quality narration.
- * Requires VITE_ELEVENLABS_API_KEY environment variable.
+ * API calls are proxied through the backend server (/api/tts/synthesize).
  */
 export class ElevenLabsTTSEngine {
-  private apiKey: string;
   private voiceId: string;
   private howl: Howl | null = null;
+  private audioUrl: string | null = null;
   private listeners: Set<TTSEventListener> = new Set();
   private chunks: TTSChunk[] = [];
   private currentChunkIndex: number = 0;
@@ -234,8 +234,7 @@ export class ElevenLabsTTSEngine {
   private currentTime: number = 0;
   private updateInterval: NodeJS.Timeout | null = null;
 
-  constructor(apiKey: string, voiceId: string) {
-    this.apiKey = apiKey;
+  constructor(voiceId: string) {
     this.voiceId = voiceId;
   }
 
@@ -273,27 +272,17 @@ export class ElevenLabsTTSEngine {
   }
 
   /**
-   * Synthesize text using ElevenLabs API.
+   * Synthesize text via the backend proxy (/api/tts/synthesize).
    */
   private async synthesize(text: string): Promise<ArrayBuffer> {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${this.voiceId}`, {
+    const response = await fetch('/api/tts/synthesize', {
       method: 'POST',
-      headers: {
-        'xi-api-key': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_monolingual_v1',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-        },
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voiceId: this.voiceId }),
     });
 
     if (!response.ok) {
-      throw new Error(`ElevenLabs API error: ${response.statusText}`);
+      throw new Error(`TTS proxy error: ${response.statusText}`);
     }
 
     return response.arrayBuffer();
@@ -318,11 +307,11 @@ export class ElevenLabsTTSEngine {
       // Synthesize audio
       const audioBuffer = await this.synthesize(text);
       const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
+      this.audioUrl = URL.createObjectURL(blob);
 
       // Create Howl instance
       this.howl = new Howl({
-        src: [url],
+        src: [this.audioUrl],
         rate: this.speed,
         onplay: () => {
           this.emit({ type: 'start' });
@@ -378,14 +367,20 @@ export class ElevenLabsTTSEngine {
   }
 
   /**
-   * Stop playback.
+   * Stop playback and release audio resources.
    */
   stop(): void {
+    this.clearUpdateInterval();
     if (this.howl) {
       this.howl.stop();
+      this.howl.unload();
+      this.howl = null;
       this.isPlaying = false;
     }
-    this.clearUpdateInterval();
+    if (this.audioUrl) {
+      URL.revokeObjectURL(this.audioUrl);
+      this.audioUrl = null;
+    }
   }
 
   /**

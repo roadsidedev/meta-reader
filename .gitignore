@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs
+*.log
+.manus-logs/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Vite cache
+.vite/
