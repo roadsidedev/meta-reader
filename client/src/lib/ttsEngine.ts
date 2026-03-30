@@ -134,6 +134,10 @@ export class BrowserTTSEngine {
 
     this.utterance.onstart = () => {
       this.emit({ type: 'start' });
+      // Emit boundary for the first chunk so it's shown immediately
+      if (this.chunks.length > 0) {
+        this.emit({ type: 'boundary', chunk: this.chunks[0], currentTime: 0 });
+      }
     };
 
     this.utterance.onend = () => {

@@ -17,10 +17,20 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <script>
+      (function() {
+        var src = "%VITE_ANALYTICS_ENDPOINT%/umami";
+        var id = "%VITE_ANALYTICS_WEBSITE_ID%";
+        // Only load analytics if env vars were replaced at build time
+        if (src.indexOf('%') === -1 && id.indexOf('%') === -1) {
+          var s = document.createElement('script');
+          s.defer = true;
+          s.src = src;
+          s.setAttribute('data-website-id', id);
+          document.head.appendChild(s);
+        }
+      })();
+    </script>
   </body>
 
 </html>
