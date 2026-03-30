@@ -63,6 +63,9 @@ export default function SceneCanvas({ className = '' }: SceneCanvasProps) {
       <canvas
         ref={canvasRef}
         className="w-full h-full"
+        role="img"
+        aria-label="Animated scene background"
+        aria-hidden="true"
         style={{
           display: 'block',
           imageRendering: 'auto',

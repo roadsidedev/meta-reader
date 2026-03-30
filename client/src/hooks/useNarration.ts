@@ -4,7 +4,6 @@ import { useNarrationStore } from '@/stores/narrationStore';
 
 export interface UseNarrationOptions {
   useElevenLabs?: boolean;
-  elevenLabsApiKey?: string;
   elevenLabsVoiceId?: string;
 }
 
@@ -14,7 +13,6 @@ export interface UseNarrationOptions {
 export function useNarration(options: UseNarrationOptions = {}) {
   const {
     useElevenLabs = false,
-    elevenLabsApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY,
     elevenLabsVoiceId = 'EXAVITQu4vr4xnSDxMaL', // Default ElevenLabs voice
   } = options;
 
@@ -36,8 +34,8 @@ export function useNarration(options: UseNarrationOptions = {}) {
 
   // Initialize TTS engine
   useEffect(() => {
-    if (useElevenLabs && elevenLabsApiKey) {
-      engineRef.current = new ElevenLabsTTSEngine(elevenLabsApiKey, elevenLabsVoiceId);
+    if (useElevenLabs) {
+      engineRef.current = new ElevenLabsTTSEngine(elevenLabsVoiceId);
       setIsReady(true);
     } else {
       // Use browser TTS
@@ -58,7 +56,7 @@ export function useNarration(options: UseNarrationOptions = {}) {
       speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
       return () => speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
     }
-  }, [useElevenLabs, elevenLabsApiKey, elevenLabsVoiceId]);
+  }, [useElevenLabs, elevenLabsVoiceId]);
 
   // Handle TTS events
   useEffect(() => {

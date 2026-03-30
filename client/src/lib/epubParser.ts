@@ -62,14 +62,18 @@ export async function parseEpub(input: File | ArrayBuffer): Promise<ParsedEpub> 
  * Extract metadata from EPUB book.
  */
 async function extractMetadata(book: EPUB.Book): Promise<EpubMetadata> {
-  const metadata = book.packaging.metadata;
+  const metadata = book.packaging.metadata as unknown as Record<string, unknown>;
+  const bookAny = book as unknown as Record<string, unknown>;
+  const subjectRaw = metadata['subject'];
+  const genre = Array.isArray(subjectRaw) ? (subjectRaw[0] as string | undefined) : undefined;
+  const coverPromise = bookAny['cover'] as Promise<Blob> | undefined;
 
   return {
-    title: metadata.title || 'Untitled',
-    author: metadata.creator || 'Unknown Author',
-    genre: metadata.subject?.[0] || undefined,
-    language: metadata.language?.[0] || 'en',
-    cover: book.cover ? await book.cover.then((blob) => URL.createObjectURL(blob)).catch(() => undefined) : undefined,
+    title: (metadata['title'] as string) || 'Untitled',
+    author: (metadata['creator'] as string) || 'Unknown Author',
+    genre,
+    language: Array.isArray(metadata['language']) ? (metadata['language'][0] as string) : 'en',
+    cover: coverPromise ? await coverPromise.then((blob) => URL.createObjectURL(blob)).catch(() => undefined) : undefined,
   };
 }
 
@@ -80,11 +84,13 @@ async function extractChapters(book: EPUB.Book): Promise<Chapter[]> {
   const chapters: Chapter[] = [];
   let order = 0;
 
-  if (!book.spine || !book.spine.spineItems) {
+  const spineAny = book.spine as unknown as Record<string, unknown>;
+  if (!book.spine || !spineAny['spineItems']) {
     return chapters;
   }
 
-  for (const item of book.spine.spineItems) {
+  for (const _item of spineAny['spineItems'] as unknown[]) {
+    const item = _item as { id?: string; label?: string; href?: string; load: (loader: unknown) => Promise<unknown> };
     try {
       const chapter = await item.load(book.load.bind(book));
 

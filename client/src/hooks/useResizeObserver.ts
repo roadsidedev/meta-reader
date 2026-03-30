@@ -5,7 +5,7 @@ import { useEffect, useRef, useCallback } from 'react';
  * Uses ResizeObserver API for better performance than window resize events.
  */
 export function useResizeObserver(
-  ref: React.RefObject<HTMLElement>,
+  ref: React.RefObject<HTMLElement | null>,
   callback: (entry: ResizeObserverEntry) => void,
   options?: ResizeObserverOptions
 ) {

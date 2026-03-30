@@ -162,77 +162,25 @@ export class LocalSceneAnalyzer {
 }
 
 /**
- * Cloud-based scene analyzer using Claude API.
- * Provides more sophisticated analysis but requires API calls.
+ * Cloud-based scene analyzer. Calls the backend proxy (/api/scene/analyze)
+ * which forwards to Claude using the server-side API key.
  */
 export class CloudSceneAnalyzer {
-  private apiKey: string;
-  private apiUrl: string;
-
-  constructor(apiKey: string, apiUrl: string = 'https://api.anthropic.com/v1/messages') {
-    this.apiKey = apiKey;
-    this.apiUrl = apiUrl;
-  }
-
   /**
-   * Analyze text using Claude API.
+   * Analyze text via the backend proxy.
    */
   async analyze(text: string, storyContext?: string): Promise<SceneAnalysis> {
-    const prompt = `Analyze the following narration and provide a scene description.
+    const response = await fetch('/api/scene/analyze', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, storyContext }),
+    });
 
-Narration: "${text}"
-${storyContext ? `Story Context: ${storyContext}` : ''}
-
-Respond in JSON format with these fields:
-{
-  "mood": "fantasy" | "noir" | "intimate" | "mysterious" | "action" | "peaceful",
-  "visualPrompt": "detailed visual description for the scene",
-  "particleType": "embers" | "rain" | "fog" | "leaves" | "dust" | "none",
-  "intensity": 0.0 to 1.0,
-  "colorPalette": ["color1", "color2", "color3"]
-}
-
-Keep the response concise and ensure valid JSON.`;
-
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 500,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const content = data.content[0]?.text || '{}';
-
-      // Parse JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in response');
-      }
-
-      const analysis = JSON.parse(jsonMatch[0]) as SceneAnalysis;
-      return analysis;
-    } catch (error) {
-      console.error('Cloud scene analysis failed:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(`Scene analysis proxy error: ${response.statusText}`);
     }
+
+    return response.json() as Promise<SceneAnalysis>;
   }
 }
 
@@ -241,13 +189,11 @@ Keep the response concise and ensure valid JSON.`;
  */
 export class HybridSceneAnalyzer {
   private localAnalyzer: LocalSceneAnalyzer;
-  private cloudAnalyzer: CloudSceneAnalyzer | null;
-  private useCloud: boolean;
+  private cloudAnalyzer: CloudSceneAnalyzer;
 
-  constructor(cloudApiKey?: string) {
+  constructor() {
     this.localAnalyzer = new LocalSceneAnalyzer();
-    this.cloudAnalyzer = cloudApiKey ? new CloudSceneAnalyzer(cloudApiKey) : null;
-    this.useCloud = !!cloudApiKey;
+    this.cloudAnalyzer = new CloudSceneAnalyzer();
   }
 
   /**
@@ -257,8 +203,8 @@ export class HybridSceneAnalyzer {
     // Always start with local analysis for immediate feedback
     const localAnalysis = this.localAnalyzer.analyze(text);
 
-    // If cloud is available and requested, enhance with cloud analysis
-    if (useCloudIfAvailable && this.cloudAnalyzer) {
+    // If cloud requested, enhance with cloud analysis
+    if (useCloudIfAvailable) {
       try {
         const cloudAnalysis = await this.cloudAnalyzer.analyze(text, storyContext);
         // Merge cloud analysis with local, preferring cloud for detailed fields
@@ -266,8 +212,7 @@ export class HybridSceneAnalyzer {
           ...localAnalysis,
           ...cloudAnalysis,
         };
-      } catch (error) {
-        console.warn('Cloud analysis failed, using local analysis:', error);
+      } catch {
         return localAnalysis;
       }
     }

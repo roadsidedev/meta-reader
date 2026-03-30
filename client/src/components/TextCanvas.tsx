@@ -123,6 +123,8 @@ export default function TextCanvas({ width = 800, height = 600, className = '' }
       <canvas
         ref={canvasRef}
         className="w-full h-full"
+        role="img"
+        aria-label={currentChunk ? `Narration: ${currentChunk}` : 'Narration text canvas'}
         style={{
           display: 'block',
           imageRendering: 'crisp-edges',
