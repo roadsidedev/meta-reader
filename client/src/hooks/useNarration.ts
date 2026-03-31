@@ -98,7 +98,7 @@ export function useNarration(options: UseNarrationOptions = {}) {
     return () => {
       engineRef.current?.removeEventListener(handleTTSEvent);
     };
-  }, [setIsPlaying, setCurrentChunk, setCurrentCharIndex]);
+  }, [setIsPlaying, setCurrentChunk, setCurrentCharIndex, isReady]);
 
   // Update playback speed
   useEffect(() => {
