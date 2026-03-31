@@ -71,13 +71,42 @@ export default function TextCanvas({ width = 800, height = 600, className = '' }
 
   // Draw text
   useEffect(() => {
-    if (!canvasRef.current || !layout) return;
+    if (!canvasRef.current) return;
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
 
+    const canvasW = canvasRef.current.width / window.devicePixelRatio;
+    const canvasH = canvasRef.current.height / window.devicePixelRatio;
+
     // Clear canvas
-    ctx.clearRect(0, 0, canvasRef.current.width / window.devicePixelRatio, canvasRef.current.height / window.devicePixelRatio);
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Fallback: render plain text when pretext layout is unavailable
+    if (!layout) {
+      if (currentChunk) {
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.fillStyle = textColor;
+        ctx.textBaseline = 'top';
+        ctx.shadowColor = 'transparent';
+        // Word-wrap manually for the fallback path
+        const words = currentChunk.split(' ');
+        let line = '';
+        let y = Math.max(20, (canvasH - fontSize * 3) / 2);
+        for (const word of words) {
+          const test = line ? `${line} ${word}` : word;
+          if (ctx.measureText(test).width > canvasW - 40 && line) {
+            ctx.fillText(line, 20, y);
+            line = word;
+            y += fontSize * lineHeight;
+          } else {
+            line = test;
+          }
+        }
+        if (line) ctx.fillText(line, 20, y);
+      }
+      return;
+    }
 
     // Set text style
     ctx.font = `${fontSize}px "${fontFamily}"`;
@@ -116,7 +145,7 @@ export default function TextCanvas({ width = 800, height = 600, className = '' }
       // Clear shadow
       ctx.shadowColor = 'transparent';
     });
-  }, [layout, currentCharIndex, textColor, accentColor, fontSize, fontFamily, lineHeight, getLineAtCharIndex]);
+  }, [layout, currentChunk, currentCharIndex, textColor, accentColor, fontSize, fontFamily, lineHeight, getLineAtCharIndex]);
 
   return (
     <div ref={containerRef} className={`relative w-full h-full bg-transparent ${className}`}>

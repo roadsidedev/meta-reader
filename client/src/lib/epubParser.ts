@@ -66,14 +66,24 @@ async function extractMetadata(book: EPUB.Book): Promise<EpubMetadata> {
   const bookAny = book as unknown as Record<string, unknown>;
   const subjectRaw = metadata['subject'];
   const genre = Array.isArray(subjectRaw) ? (subjectRaw[0] as string | undefined) : undefined;
-  const coverPromise = bookAny['cover'] as Promise<Blob> | undefined;
+
+  // book.coverUrl() returns Promise<string|null> — the correct epubjs API
+  let cover: string | undefined;
+  try {
+    if (typeof (bookAny['coverUrl'] as unknown) === 'function') {
+      const coverUrl = await (bookAny['coverUrl'] as () => Promise<string | null>)();
+      cover = coverUrl ?? undefined;
+    }
+  } catch {
+    // cover unavailable — not critical
+  }
 
   return {
     title: (metadata['title'] as string) || 'Untitled',
     author: (metadata['creator'] as string) || 'Unknown Author',
     genre,
     language: Array.isArray(metadata['language']) ? (metadata['language'][0] as string) : 'en',
-    cover: coverPromise ? await coverPromise.then((blob) => URL.createObjectURL(blob)).catch(() => undefined) : undefined,
+    cover,
   };
 }
 

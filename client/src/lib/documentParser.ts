@@ -1,8 +1,118 @@
 import { parseEpub, detectGenre, type Chapter, type EpubMetadata, type ParsedEpub } from './epubParser';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 export type { Chapter, EpubMetadata, ParsedEpub };
 
 const CHAPTER_SIZE = 3000; // target chars per chapter for non-structured formats
+
+// ---------------------------------------------------------------------------
+// Intelligent chapter detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to split text into chapters by recognising heading patterns common in
+ * books and long-form documents:
+ *  - "Chapter 1 / Chapter One / Chapter I"  (with optional ": subtitle")
+ *  - "CHAPTER 1 / CHAPTER ONE / CHAPTER I"
+ *  - "Part 1 / Part One / Part I"
+ *  - "Act 1 / Act I / Act One"
+ *  - "Book 1 / Book I / Book One"
+ *  - Stand-alone named sections: Prologue, Epilogue, Preface, Introduction,
+ *    Foreword, Afterword, Interlude, Appendix
+ *  - A short (≤60 char) ALL-CAPS line that isn't a sentence fragment
+ *
+ * Returns an array of { title, content } objects when 2+ headings are found,
+ * otherwise returns null so callers can fall back to structural splitting.
+ */
+function extractChaptersByHeadings(
+  text: string,
+): { title: string; content: string }[] | null {
+  const ROMAN = 'M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})';
+  const WORDS_TO_20 =
+    'one|two|three|four|five|six|seven|eight|nine|ten|' +
+    'eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty';
+
+  // Heading pattern: keyword + number/word/roman  +  optional subtitle
+  const keywordHeading = new RegExp(
+    `^(?:chapter|part|act|book|section|volume)\\s+` +
+      `(?:\\d+|${ROMAN}|${WORDS_TO_20})` +
+      `(?:\\s*[:\\-–—]\\s*.+)?$`,
+    'im',
+  );
+
+  // Stand-alone named sections (exact word, optionally followed by a subtitle)
+  const namedSection = new RegExp(
+    `^(?:prologue|epilogue|preface|introduction|foreword|afterword|interlude|appendix|coda|finale)` +
+      `(?:\\s*[:\\-–—]\\s*.+)?$`,
+    'im',
+  );
+
+  // A line that is entirely upper-case letters/spaces/numbers and short enough
+  // to plausibly be a heading (e.g. "THE FIRST MEETING", "PART ONE")
+  const allCapsLine = /^[A-Z][A-Z0-9 \t'",.:!?\-–—]{2,59}$/m;
+
+  // Find all heading positions by scanning line by line
+  const lines = text.split('\n');
+  const headingIndices: { lineIdx: number; title: string }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim();
+    if (!raw) continue;
+
+    const isHeading =
+      keywordHeading.test(raw) ||
+      namedSection.test(raw) ||
+      allCapsLine.test(raw);
+
+    if (isHeading) {
+      // Require either: it's at the very start, or the previous non-empty line
+      // was blank (i.e. heading is its own block)
+      const prevNonEmpty = lines
+        .slice(0, i)
+        .reverse()
+        .find((l) => l.trim() !== '');
+      if (i === 0 || prevNonEmpty === undefined || lines[i - 1].trim() === '') {
+        headingIndices.push({ lineIdx: i, title: raw });
+      }
+    }
+  }
+
+  if (headingIndices.length < 2) return null;
+
+  // Build chapters from the detected heading positions
+  const charPositions: number[] = [];
+  let charOffset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    charPositions.push(charOffset);
+    charOffset += lines[i].length + 1; // +1 for \n
+  }
+
+  const result: { title: string; content: string }[] = [];
+
+  for (let h = 0; h < headingIndices.length; h++) {
+    const { lineIdx, title } = headingIndices[h];
+    const contentStart = charPositions[lineIdx + 1] ?? charPositions[lineIdx];
+    const contentEnd =
+      h + 1 < headingIndices.length
+        ? charPositions[headingIndices[h + 1].lineIdx]
+        : text.length;
+
+    const content = text.slice(contentStart, contentEnd).trim();
+    if (content.length > 0) {
+      result.push({ title, content });
+    }
+  }
+
+  // Add any text before the first heading as a preamble chapter
+  const firstHeadingStart = charPositions[headingIndices[0].lineIdx];
+  const preamble = text.slice(0, firstHeadingStart).trim();
+  if (preamble.length > 100) {
+    result.unshift({ title: 'Preamble', content: preamble });
+  }
+
+  return result.length >= 2 ? result : null;
+}
 
 // ---------------------------------------------------------------------------
 // Plain text
@@ -12,8 +122,22 @@ export function parsePlainText(text: string, filename?: string): ParsedEpub {
   const title = filename ? filename.replace(/\.[^.]+$/, '') : 'Pasted Text';
   const metadata: EpubMetadata = { title, author: 'Unknown' };
 
-  // Split into paragraphs, then group into chapters of ~CHAPTER_SIZE chars
-  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  // Try intelligent chapter detection first
+  const detected = extractChaptersByHeadings(text);
+  if (detected) {
+    const chapters: Chapter[] = detected.map(({ title: chTitle, content }, i) =>
+      makeChapter(`chapter-${i}`, chTitle, content, i),
+    );
+    const genre = detectGenre(metadata, chapters[0]?.content || '');
+    metadata.genre = genre;
+    return { metadata, chapters, toc: chapters.map((c) => ({ ...c, content: '' })) };
+  }
+
+  // Fall back: split into paragraphs, then group into chapters of ~CHAPTER_SIZE chars
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
   const chapters: Chapter[] = [];
   let buffer = '';
   let order = 0;
@@ -89,16 +213,16 @@ export async function parseMarkdown(file: File): Promise<ParsedEpub> {
 
 function stripMarkdown(text: string): string {
   return text
-    .replace(/!\[.*?\]\(.*?\)/g, '')           // images
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')   // links → text
-    .replace(/`{1,3}[^`]*`{1,3}/g, '')         // inline code / code blocks
-    .replace(/^```[\s\S]*?```$/gm, '')          // fenced code blocks
-    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')   // bold/italic
-    .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')     // underscores
-    .replace(/^>\s+/gm, '')                     // blockquotes
-    .replace(/^[-*+]\s+/gm, '')                // unordered lists
-    .replace(/^\d+\.\s+/gm, '')               // ordered lists
-    .replace(/^#{1,6}\s+/gm, '')              // remaining headings
+    .replace(/!\[.*?\]\(.*?\)/g, '') // images
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links → text
+    .replace(/`{1,3}[^`]*`{1,3}/g, '') // inline code / code blocks
+    .replace(/^```[\s\S]*?```$/gm, '') // fenced code blocks
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1') // bold/italic
+    .replace(/_{1,2}([^_]+)_{1,2}/g, '$1') // underscores
+    .replace(/^>\s+/gm, '') // blockquotes
+    .replace(/^[-*+]\s+/gm, '') // unordered lists
+    .replace(/^\d+\.\s+/gm, '') // ordered lists
+    .replace(/^#{1,6}\s+/gm, '') // remaining headings
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -113,13 +237,8 @@ export async function parsePdf(file: File): Promise<ParsedEpub> {
 
   const arrayBuffer = await file.arrayBuffer();
 
-  // Dynamic import to avoid SSR issues
-  const pdfjsLib = await import('pdfjs-dist');
-  // Point worker to the bundled worker file
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url
-  ).toString();
+  // Point worker to the Vite-bundled worker URL
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
@@ -149,26 +268,36 @@ export async function parsePdf(file: File): Promise<ParsedEpub> {
     if (pageText) pageTexts.push(pageText);
   }
 
-  // Group pages into chapters (~10 pages each)
+  if (pageTexts.length === 0) {
+    const chapters = [makeChapter('chapter-0', pdfTitle, '(No extractable text found)', 0)];
+    return { metadata, chapters, toc: chapters.map((c) => ({ ...c, content: '' })) };
+  }
+
+  // Try intelligent chapter detection on the full text
+  const fullText = pageTexts.join('\n\n');
+  const detected = extractChaptersByHeadings(fullText);
+  if (detected) {
+    const chapters: Chapter[] = detected.map(({ title: chTitle, content }, i) =>
+      makeChapter(`chapter-${i}`, chTitle, content, i),
+    );
+    const genre = detectGenre(metadata, chapters[0]?.content || '');
+    metadata.genre = genre;
+    return { metadata, chapters, toc: chapters.map((c) => ({ ...c, content: '' })) };
+  }
+
+  // Fall back: group pages into chapters (~10 pages each)
   const PAGES_PER_CHAPTER = 10;
   const chapters: Chapter[] = [];
   let order = 0;
 
   for (let i = 0; i < pageTexts.length; i += PAGES_PER_CHAPTER) {
     const chunk = pageTexts.slice(i, i + PAGES_PER_CHAPTER).join('\n\n');
-    const chapterNum = order + 1;
     const startPage = i + 1;
     const endPage = Math.min(i + PAGES_PER_CHAPTER, pageTexts.length);
-    const chapterTitle = pageTexts.length <= PAGES_PER_CHAPTER
-      ? pdfTitle
-      : `Pages ${startPage}–${endPage}`;
+    const chapterTitle =
+      pageTexts.length <= PAGES_PER_CHAPTER ? pdfTitle : `Pages ${startPage}–${endPage}`;
     chapters.push(makeChapter(`chapter-${order}`, chapterTitle, chunk, order));
     order++;
-    chapterNum; // suppress unused warning
-  }
-
-  if (chapters.length === 0) {
-    chapters.push(makeChapter('chapter-0', pdfTitle, '(No extractable text found)', 0));
   }
 
   const genre = detectGenre(metadata, chapters[0]?.content || '');
@@ -193,7 +322,6 @@ export async function parseWord(file: File): Promise<ParsedEpub> {
   const html = result.value;
 
   // Split on heading tags
-  const headingRegex = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi;
   const parts = html.split(/(?=<h[1-3][\s>])/i).filter(Boolean);
 
   let chapters: Chapter[] = [];
@@ -213,8 +341,6 @@ export async function parseWord(file: File): Promise<ParsedEpub> {
     chapters.push(makeChapter(`chapter-${order}`, sectionTitle, content, order));
     order++;
   }
-
-  headingRegex; // suppress unused warning
 
   if (chapters.length === 0) {
     return parsePlainText(stripHtml(html), filename);
